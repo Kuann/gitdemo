@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Detect Faces Sample :Avatar Team</title>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <!-- update the version number as needed -->
+    <script defer src="/__/firebase/4.6.2/firebase-app.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <script defer src="/__/firebase/4.6.2/firebase-auth.js"></script>
+    <script defer src="/__/firebase/4.6.2/firebase-database.js"></script>
+    <script defer src="/__/firebase/4.6.2/firebase-messaging.js"></script>
+    <script defer src="/__/firebase/4.6.2/firebase-storage.js"></script>
+    <!-- initialize the SDK after all desired features are loaded -->
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap-theme.min.css">
+
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
+    <script defer src="/__/firebase/init.js"></script>
+    <style>
+    .main-image-container {
+        text-align: center;
+    }
+    </style>
+</head>
+<body>
+
+<h1>Detect Faces Sample :Avatar Team</h1>
+<br/>
+Url to image: <input type="text" name="inputImage" id="inputImage" value="https://upload.wikimedia.org/wikipedia/commons/c/c3/RH_Louise_Lillian_Gish.jpg" />
+<button onclick="onClickInternetImage()">Analyze face</button>
+<br><br>
+Upload image <input type="file" accept="image/*" id="uploadImage" onchange="handleUpload(event)"/> 
+
+<div>
+    <div class="main-image-container">
+        <canvas id="mainImage"></canvas>
+        <canvas id="tip" width=100 height=100></canvas>
+    </div>
+</div>
+
+<script type="text/javascript">
+    var imgUrl;
+    var MAX_WIDTH = 1024;
+    var mainImgCanvas = document.getElementById('mainImage');
+    var mainImgContext = mainImgCanvas.getContext('2d');
+
+
+    function processImage(sourceImageUrl) {
+        var subscriptionKey = "58c0dc08a45b4dd3a0596e964866896b";
+        var uriBase = "https://westcentralus.api.cognitive.microsoft.com/face/v1.0/detect";
+        // Request parameters.
+        var params = {
+            "returnFaceId": "true",
+            "returnFaceLandmarks": "false",
+            "returnFaceAttributes": "age,gender,headPose,smile,facialHair,glasses,emotion,hair,makeup,occlusion,accessories,blur,exposure,noise",
+        };
+
+        $.ajax({
+            url: uriBase + "?" + $.param(params),
+            beforeSend: function(xhrObj){
+                xhrObj.setRequestHeader("Content-Type","application/json");
+                xhrObj.setRequestHeader("Ocp-Apim-Subscription-Key", subscriptionKey);
+            },
+            type: "POST",
+            data: '{"url": ' + '"' + sourceImageUrl + '"}',
+        }).done(function(data) {
+            console.log(imgUrl);
+            console.log(data);
+            showImg(imgUrl, data);
+        }).fail(function(jqXHR, textStatus, errorThrown) {
+            // Display error message.
+            var errorString = (errorThrown === "") ? "Error. " : errorThrown + " (" + jqXHR.status + "): ";
+            errorString += (jqXHR.responseText === "") ? "" : (jQuery.parseJSON(jqXHR.responseText).message) ? 
+                jQuery.parseJSON(jqXHR.responseText).message : jQuery.parseJSON(jqXHR.responseText).error.message;
+            alert(errorString);
+        });
+    };
+
+    function handleUpload(event) {
+        var file = event.target.files[0];
+        // Create a root reference
+        var storageRef = firebase.storage().ref();
+        // Create a reference to 'images/mountains.jpg'
+        var mountainImagesRef = storageRef.child('images/' + file.name);
+        mountainImagesRef.put(file).then(function(snapshot) {
+            // get file url
+            imgUrl = snapshot.downloadURL;
+            processImage(imgUrl);
+        });
+    }
+    function onClickInternetImage() {
+        imgUrl = document.getElementById("inputImage").value;
+        processImage(imgUrl);
+    }
+
+    function showImg(mainImgUrl, data) {
+        var image = new Image();
+        image.src = mainImgUrl;
+        image.onload = function () {
+            var width = image.width;
+            var height = image.height;
+            ratio = 1;
+            if (width > MAX_WIDTH) {
+                ratio = MAX_WIDTH / width;   
+                width = MAX_WIDTH ; 
+                height = height * ratio;
+            }
+            mainImgCanvas.width = width + 100; 
+            mainImgCanvas.height = height + 100;
+            
+            mainImgContext.drawImage(image, 0, 0, width, height);
+            
+            mainImgCanvas.onmousemove = function (e) {
+                var rect = this.getBoundingClientRect();
+                var x = e.clientX - rect.left;
+                var y = e.clientY - rect.top;
+                
+                mainImgContext.clearRect(0, 0, mainImgCanvas.width, mainImgCanvas.height);
+                mainImgContext.drawImage(image, 0, 0, width, height);
+                
+                var i = 0;
+                while (r = data[i++]) {
+                    r.x = r.faceRectangle.left;
+                    r.y = r.faceRectangle.top;
+                    r.w = r.faceRectangle.width;
+                    r.h = r.faceRectangle.height;
+                
+                    mainImgContext.beginPath();
+                    mainImgContext.rect(ratio * r.x, ratio * r.y, ratio * r.w, ratio * r.h);
+                    if (mainImgContext.isPointInPath(x, y)) {
+                        mainImgContext.rect(ratio * r.x, ratio * r.y, ratio * r.w, ratio * r.h);
+                        mainImgContext.strokeStyle = "green";
+                        mainImgContext.stroke();
+        
+                        face = r.faceAttributes;
+                        emotion = getEmotion(face.emotion);
+                        mainImgContext.font = "20px Georgia";
+                        var my_gradient = mainImgContext.createLinearGradient(0,0,170,0);
+                        my_gradient.addColorStop(1,"#00cd00");                        
+                        var string = 'Gender: ' + face.gender + '\r\nAge: '+ Math.round(face.age) + '\r\nEmotion: ' + emotion;
+                        var array = string.split("\r\n");
+                        var x = ratio * r.x;
+                        var y = ratio * r.y + 20 + r.h;
+
+                        for (var i = 0; i < array.length; i++) {
+                           mainImgContext.fillText(array[i], x, y);
+                           y += 25
+                        }
+                        mainImgContext.fillStyle = my_gradient;
+
+                    } else {
+                        //
+                    }
+                }
+            }
+        }
+    }
+
+    function getEmotion(emotions) {
+        for (var name in emotions) {
+            if (emotions[name] == Math.max(emotions.anger, emotions.contempt, emotions.disgust, emotions.fear, emotions.happiness, emotions.neutral, emotions.neutral, emotions.neutral)) {
+                return name;
+            }
+        }
+    }
+
+    $( document ).ready(function() {
+        onClickInternetImage();
+    });
+</script>
+</body>
+</html>
